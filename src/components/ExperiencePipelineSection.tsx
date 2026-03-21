@@ -1,16 +1,45 @@
-import { motion, useMotionValueEvent, useReducedMotion, useScroll, useSpring, useTransform, AnimatePresence } from 'framer-motion'
+import { motion, useReducedMotion, AnimatePresence } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { GripHorizontal, RotateCcw } from 'lucide-react'
 import { timeline } from '../data/timeline'
 
 type FlowStage = 'connecting' | 'queued' | 'processing' | 'saving' | 'saved'
 type PanelState = 'normal' | 'minimized' | 'closed'
+const WHEEL_STEP_THRESHOLD = 70
+const TOUCH_STEP_THRESHOLD = 56
+const WHEEL_STEP_COOLDOWN_MS = 380
 
 function stageTone(stage: FlowStage) {
   if (stage === 'processing') return 'text-accent'
   if (stage === 'saving' || stage === 'saved') return 'text-green'
   if (stage === 'queued') return 'text-primary-light'
   return 'text-text-secondary'
+}
+
+function getPipelineSnapshot(activeIndex: number, total: number) {
+  const normalizedProgress = total <= 1 ? 1 : activeIndex / (total - 1)
+
+  if (normalizedProgress <= 0) {
+    return { stage: 'connecting' as const, savedCount: 0, stageRail: 0.08 }
+  }
+
+  if (normalizedProgress < 0.34) {
+    return { stage: 'queued' as const, savedCount: 0, stageRail: 0.3 }
+  }
+
+  if (normalizedProgress < 0.68) {
+    return {
+      stage: 'processing' as const,
+      savedCount: Math.max(0, activeIndex - 1),
+      stageRail: Math.max(0.44, normalizedProgress),
+    }
+  }
+
+  if (normalizedProgress < 1) {
+    return { stage: 'saving' as const, savedCount: activeIndex, stageRail: Math.max(0.76, normalizedProgress) }
+  }
+
+  return { stage: 'saved' as const, savedCount: total, stageRail: 1 }
 }
 
 interface JsonToken {
@@ -165,25 +194,14 @@ function JsonViewer({ json, id, onClose, onMinimize, onMaxToggle, isMinimized }:
 export default function ExperiencePipelineSection() {
   const sectionRef = useRef<HTMLElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
-  const previousRef = useRef(0)
+  const wheelDeltaRef = useRef(0)
+  const lastStepAtRef = useRef(0)
+  const activeIndexRef = useRef(0)
+  const touchStartYRef = useRef<number | null>(null)
   const reduceMotion = useReducedMotion()
   const experiences = useMemo(() => timeline.slice().reverse(), [])
-
-  const { scrollYProgress } = useScroll({
-    target: sectionRef,
-    offset: ['start end', 'end start'],
-  })
-
-  const progress = useSpring(scrollYProgress, {
-    stiffness: 130,
-    damping: 28,
-    mass: 0.28,
-  })
-
   const [direction, setDirection] = useState<'forward' | 'backward'>('forward')
   const [activeIndex, setActiveIndex] = useState(0)
-  const [savedCount, setSavedCount] = useState(0)
-  const [stage, setStage] = useState<FlowStage>('connecting')
 
   const [panelStates, setPanelStates] = useState<Record<string, PanelState>>({})
   const [maximizedPanel, setMaximizedPanel] = useState<string | null>(null)
@@ -209,34 +227,139 @@ export default function ExperiencePipelineSection() {
     }
   }, [maximizedPanel])
 
-  useMotionValueEvent(progress, 'change', (latest) => {
-    setDirection(latest >= previousRef.current ? 'forward' : 'backward')
-    previousRef.current = latest
+  useEffect(() => {
+    activeIndexRef.current = activeIndex
+  }, [activeIndex])
 
-    const total = experiences.length
-    const effective = Math.min(1, Math.max(0, (latest - 0.08) / 0.86))
-    const nextIndex = Math.min(total - 1, Math.floor(effective * total))
-    setActiveIndex(nextIndex)
+  useEffect(() => {
+    const canPinViewport = () => {
+      const section = sectionRef.current
+      if (!section) return false
 
-    if (latest < 0.18) {
-      setStage('connecting')
-      setSavedCount(0)
-    } else if (latest < 0.35) {
-      setStage('queued')
-      setSavedCount(0)
-    } else if (latest < 0.62) {
-      setStage('processing')
-      setSavedCount(Math.max(0, nextIndex - 1))
-    } else if (latest < 0.82) {
-      setStage('saving')
-      setSavedCount(nextIndex)
-    } else {
-      setStage('saved')
-      setSavedCount(total)
+      const rect = section.getBoundingClientRect()
+      const topLockBoundary = 96
+      const bottomLockBoundary = window.innerHeight - 96
+
+      return rect.top <= topLockBoundary && rect.bottom >= bottomLockBoundary
     }
-  })
 
-  const stageRail = useTransform(progress, [0.08, 0.95], [0, 1])
+    const releaseViewport = (step: -1 | 1) => {
+      lastStepAtRef.current = window.performance.now()
+      wheelDeltaRef.current = 0
+      touchStartYRef.current = null
+
+      window.scrollBy({
+        top: step > 0 ? Math.max(window.innerHeight * 0.78, 320) : -Math.max(window.innerHeight * 0.78, 320),
+        behavior: 'smooth',
+      })
+    }
+
+    const advanceExperience = (step: -1 | 1) => {
+      setDirection(step > 0 ? 'forward' : 'backward')
+      setActiveIndex((current) => {
+        const next = Math.min(experiences.length - 1, Math.max(0, current + step))
+        activeIndexRef.current = next
+        return next
+      })
+      lastStepAtRef.current = window.performance.now()
+      wheelDeltaRef.current = 0
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      if (maximizedPanel || !canPinViewport()) {
+        wheelDeltaRef.current = 0
+        return
+      }
+
+      if (Math.abs(event.deltaY) < 1) return
+
+      const stepDirection = event.deltaY > 0 ? 1 : -1
+      const currentIndex = activeIndexRef.current
+      const nextIndex = Math.min(experiences.length - 1, Math.max(0, currentIndex + stepDirection))
+      const canMove = nextIndex !== currentIndex
+
+      if (!canMove) {
+        event.preventDefault()
+        if (window.performance.now() - lastStepAtRef.current >= WHEEL_STEP_COOLDOWN_MS) {
+          releaseViewport(stepDirection as -1 | 1)
+        }
+        wheelDeltaRef.current = 0
+        return
+      }
+
+      event.preventDefault()
+
+      const now = window.performance.now()
+      if (now - lastStepAtRef.current < WHEEL_STEP_COOLDOWN_MS) return
+
+      if (wheelDeltaRef.current !== 0 && Math.sign(wheelDeltaRef.current) !== stepDirection) {
+        wheelDeltaRef.current = 0
+      }
+
+      wheelDeltaRef.current += event.deltaY
+
+      if (Math.abs(wheelDeltaRef.current) < WHEEL_STEP_THRESHOLD) return
+
+      advanceExperience(stepDirection as -1 | 1)
+    }
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (!canPinViewport()) {
+        touchStartYRef.current = null
+        return
+      }
+
+      touchStartYRef.current = event.touches[0]?.clientY ?? null
+    }
+
+    const handleTouchMove = (event: TouchEvent) => {
+      if (maximizedPanel || !canPinViewport() || touchStartYRef.current === null) return
+
+      const currentTouchY = event.touches[0]?.clientY
+      if (typeof currentTouchY !== 'number') return
+
+      const deltaY = touchStartYRef.current - currentTouchY
+      if (Math.abs(deltaY) < TOUCH_STEP_THRESHOLD) return
+
+      const stepDirection = deltaY > 0 ? 1 : -1
+      const currentIndex = activeIndexRef.current
+      const nextIndex = Math.min(experiences.length - 1, Math.max(0, currentIndex + stepDirection))
+
+      if (nextIndex === currentIndex) {
+        event.preventDefault()
+        if (window.performance.now() - lastStepAtRef.current >= WHEEL_STEP_COOLDOWN_MS) {
+          releaseViewport(stepDirection as -1 | 1)
+        }
+        touchStartYRef.current = currentTouchY
+        return
+      }
+
+      event.preventDefault()
+      advanceExperience(stepDirection as -1 | 1)
+      touchStartYRef.current = currentTouchY
+    }
+
+    const handleTouchEnd = () => {
+      touchStartYRef.current = null
+    }
+
+    window.addEventListener('wheel', handleWheel, { passive: false })
+    window.addEventListener('touchstart', handleTouchStart, { passive: true })
+    window.addEventListener('touchmove', handleTouchMove, { passive: false })
+    window.addEventListener('touchend', handleTouchEnd)
+
+    return () => {
+      window.removeEventListener('wheel', handleWheel)
+      window.removeEventListener('touchstart', handleTouchStart)
+      window.removeEventListener('touchmove', handleTouchMove)
+      window.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [experiences.length, maximizedPanel])
+
+  const { stage, savedCount, stageRail } = useMemo(
+    () => getPipelineSnapshot(activeIndex, experiences.length),
+    [activeIndex, experiences.length],
+  )
 
   const activeExperience = experiences[activeIndex]
   const queuedItems = experiences.filter((_, i) => i > activeIndex)
@@ -274,11 +397,11 @@ export default function ExperiencePipelineSection() {
   const anyModified = Object.values(panelStates).some(s => s && s !== 'normal') || maximizedPanel !== null
 
   return (
-    <section id="experience" ref={sectionRef} className="relative h-[280vh] py-16 sm:py-20">
+    <section id="experience" ref={sectionRef} className="relative min-h-screen py-16 sm:py-20">
       <div id="architecture" className="absolute -top-24" aria-hidden="true" />
 
-      <div className="sticky top-0 h-screen overflow-hidden">
-        <div className="container relative h-full flex flex-col justify-center gap-6 py-14 sm:py-16">
+      <div className="min-h-screen overflow-hidden">
+        <div className="container relative flex min-h-screen flex-col justify-center gap-6 py-14 sm:py-16">
           {/* Header */}
           <div className="max-w-4xl">
             <p className="text-[11px] sm:text-xs uppercase tracking-[0.28em] text-accent/80 mb-4">

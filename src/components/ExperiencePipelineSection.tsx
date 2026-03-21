@@ -8,6 +8,7 @@ type PanelState = 'normal' | 'minimized' | 'closed'
 const WHEEL_STEP_THRESHOLD = 70
 const TOUCH_STEP_THRESHOLD = 56
 const WHEEL_STEP_COOLDOWN_MS = 380
+const BOUNDARY_HOLD_MS = 720
 
 function stageTone(stage: FlowStage) {
   if (stage === 'processing') return 'text-accent'
@@ -196,6 +197,7 @@ export default function ExperiencePipelineSection() {
   const gridRef = useRef<HTMLDivElement>(null)
   const wheelDeltaRef = useRef(0)
   const lastStepAtRef = useRef(0)
+  const boundaryHoldUntilRef = useRef(0)
   const activeIndexRef = useRef(0)
   const touchStartYRef = useRef<number | null>(null)
   const reduceMotion = useReducedMotion()
@@ -245,6 +247,7 @@ export default function ExperiencePipelineSection() {
 
     const releaseViewport = (step: -1 | 1) => {
       lastStepAtRef.current = window.performance.now()
+      boundaryHoldUntilRef.current = 0
       wheelDeltaRef.current = 0
       touchStartYRef.current = null
 
@@ -258,6 +261,10 @@ export default function ExperiencePipelineSection() {
       setDirection(step > 0 ? 'forward' : 'backward')
       setActiveIndex((current) => {
         const next = Math.min(experiences.length - 1, Math.max(0, current + step))
+        boundaryHoldUntilRef.current =
+          next === 0 || next === experiences.length - 1
+            ? window.performance.now() + BOUNDARY_HOLD_MS
+            : 0
         activeIndexRef.current = next
         return next
       })
@@ -280,7 +287,13 @@ export default function ExperiencePipelineSection() {
 
       if (!canMove) {
         event.preventDefault()
-        if (window.performance.now() - lastStepAtRef.current >= WHEEL_STEP_COOLDOWN_MS) {
+        const now = window.performance.now()
+        if (now < boundaryHoldUntilRef.current) {
+          wheelDeltaRef.current = 0
+          return
+        }
+
+        if (now - lastStepAtRef.current >= WHEEL_STEP_COOLDOWN_MS) {
           releaseViewport(stepDirection as -1 | 1)
         }
         wheelDeltaRef.current = 0
@@ -327,7 +340,13 @@ export default function ExperiencePipelineSection() {
 
       if (nextIndex === currentIndex) {
         event.preventDefault()
-        if (window.performance.now() - lastStepAtRef.current >= WHEEL_STEP_COOLDOWN_MS) {
+        const now = window.performance.now()
+        if (now < boundaryHoldUntilRef.current) {
+          touchStartYRef.current = currentTouchY
+          return
+        }
+
+        if (now - lastStepAtRef.current >= WHEEL_STEP_COOLDOWN_MS) {
           releaseViewport(stepDirection as -1 | 1)
         }
         touchStartYRef.current = currentTouchY

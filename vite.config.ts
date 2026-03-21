@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  base: '/frontend-v2/',
+  base: '/portfolio/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: { '@': '/src' },

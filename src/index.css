@@ -892,6 +892,9 @@
   }
 }
 @media (max-width: 767px) {
+  html {
+    font-size: 15px;
+  }
   .exp-queue-vertical {
     flex-direction: row;
     overflow-x: auto;

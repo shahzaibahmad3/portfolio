@@ -99,7 +99,7 @@ export default function FloatingDock() {
           transition={{ type: 'spring', stiffness: 300, damping: 30 }}
           onMouseMove={(e) => mouseX.set(e.pageX)}
           onMouseLeave={() => mouseX.set(Infinity)}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-end gap-2 px-4 py-3 rounded-2xl bg-bg/80 backdrop-blur-xl border border-border shadow-2xl shadow-black/40"
+          className="fixed bottom-5 left-1/2 z-50 hidden max-w-[calc(100vw-2rem)] -translate-x-1/2 items-end gap-1.5 rounded-2xl border border-border bg-bg/80 px-3 py-2.5 shadow-2xl shadow-black/40 backdrop-blur-xl lg:flex lg:bottom-6 lg:gap-2 lg:px-4 lg:py-3"
           role="navigation"
           aria-label="Quick navigation"
         >

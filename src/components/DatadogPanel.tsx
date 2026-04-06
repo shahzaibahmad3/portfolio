@@ -224,7 +224,7 @@ export default function DatadogPanel() {
       dragMomentum={false}
       dragElastic={0.05}
       whileDrag={{ scale: 1.02, boxShadow: '0 25px 60px rgba(0,0,0,0.5)' }}
-      className="fixed bottom-20 right-4 z-40 hidden md:block cursor-grab active:cursor-grabbing"
+      className="fixed bottom-20 right-4 z-40 hidden cursor-grab active:cursor-grabbing xl:block"
       style={{
         width: minimized ? 200 : 340,
         opacity: xray ? 1 : 0.6,

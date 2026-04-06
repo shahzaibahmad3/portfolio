@@ -252,7 +252,7 @@ export default function HeroSection() {
               <MagneticButton
                 as="button"
                 onClick={handleBootToggle}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-4 border border-accent/35 text-accent rounded-xl hover:bg-accent/10 transition-all text-base"
+                className="hidden sm:inline-flex w-full sm:w-auto items-center justify-center gap-2.5 px-8 py-4 border border-accent/35 text-accent rounded-xl hover:bg-accent/10 transition-all text-base"
               >
                 <Power size={16} />
                 Shut Down System

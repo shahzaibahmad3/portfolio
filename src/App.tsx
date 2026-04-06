@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import AuroraBackground from './components/AuroraBackground'
 import SystemLayer from './components/SystemLayer'
 import MessageStream from './components/MessageStream'
@@ -15,10 +15,12 @@ import ContactSection from './components/ContactSection'
 import SocialSection from './components/SocialSection'
 import Footer from './components/Footer'
 import { trackPageView } from './api/client'
-import { useBootStore } from './store/bootStore'
+import { MOBILE_BOOT_MEDIA_QUERY, shouldAutoBootOnMobile, useBootStore } from './store/bootStore'
 
 export default function App() {
   const booted = useBootStore((s) => s.booted)
+  const setBooted = useBootStore((s) => s.setBooted)
+  const [isMobileViewport, setIsMobileViewport] = useState(() => shouldAutoBootOnMobile())
 
   useEffect(() => {
     const analyticsSentKey = 'portfolio-v2-analytics-sent'
@@ -38,13 +40,35 @@ export default function App() {
     })
   }, [])
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+
+    const mediaQuery = window.matchMedia(MOBILE_BOOT_MEDIA_QUERY)
+    const syncMobileState = (matches: boolean) => {
+      setIsMobileViewport(matches)
+      if (matches) setBooted(true)
+    }
+
+    syncMobileState(mediaQuery.matches)
+
+    const handleChange = (event: MediaQueryListEvent) => syncMobileState(event.matches)
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange)
+      return () => mediaQuery.removeEventListener('change', handleChange)
+    }
+
+    mediaQuery.addListener(handleChange)
+    return () => mediaQuery.removeListener(handleChange)
+  }, [setBooted])
+
   useLayoutEffect(() => {
     const root = document.documentElement
     const previousRootOverflow = root.style.overflowY
     const previousBodyOverflow = document.body.style.overflowY
     const previousScrollBehavior = root.style.scrollBehavior
 
-    if (!booted) {
+    if (!booted && !isMobileViewport) {
       root.style.scrollBehavior = 'auto'
       root.style.overflowY = 'hidden'
       document.body.style.overflowY = 'hidden'
@@ -67,7 +91,7 @@ export default function App() {
       document.body.style.overflowY = previousBodyOverflow
       root.style.scrollBehavior = previousScrollBehavior
     }
-  }, [booted])
+  }, [booted, isMobileViewport])
 
   return (
     <>

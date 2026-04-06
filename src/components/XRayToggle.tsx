@@ -8,7 +8,7 @@ export default function XRayToggle() {
   return (
     <button
       onClick={toggle}
-      className={`fixed top-8 right-8 z-50 flex items-center gap-2.5 rounded-full text-sm font-medium px-5 py-2.5 transition-transform duration-200 ease-out hover:scale-[1.10] active:scale-[0.93] opacity-0 ${
+      className={`fixed top-4 right-4 z-50 flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-medium transition-transform duration-200 ease-out hover:scale-[1.10] active:scale-[0.93] opacity-0 sm:top-6 sm:right-6 sm:gap-2.5 sm:px-5 sm:py-2.5 sm:text-sm lg:top-8 lg:right-8 ${
         xray
           ? 'bg-primary/20 border border-primary/40 text-primary-light shadow-lg shadow-primary/20'
           : 'bg-surface/80 backdrop-blur-xl border border-border text-text-muted hover:text-text hover:border-border-hover'

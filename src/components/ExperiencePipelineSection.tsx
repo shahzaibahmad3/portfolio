@@ -1,7 +1,8 @@
-import { motion, useReducedMotion, AnimatePresence } from 'framer-motion'
+import { motion, useReducedMotion, AnimatePresence, useInView } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { GripHorizontal, RotateCcw } from 'lucide-react'
 import { timeline } from '../data/timeline'
+import { MOBILE_BOOT_MEDIA_QUERY, shouldAutoBootOnMobile } from '../store/bootStore'
 
 type FlowStage = 'connecting' | 'queued' | 'processing' | 'saving' | 'saved'
 type PanelState = 'normal' | 'minimized' | 'closed'
@@ -201,9 +202,11 @@ export default function ExperiencePipelineSection() {
   const activeIndexRef = useRef(0)
   const touchStartYRef = useRef<number | null>(null)
   const reduceMotion = useReducedMotion()
+  const isSectionInView = useInView(sectionRef, { amount: 0.35 })
   const experiences = useMemo(() => timeline.slice().reverse(), [])
   const [direction, setDirection] = useState<'forward' | 'backward'>('forward')
   const [activeIndex, setActiveIndex] = useState(0)
+  const [isMobileViewport, setIsMobileViewport] = useState(() => shouldAutoBootOnMobile())
 
   const [panelStates, setPanelStates] = useState<Record<string, PanelState>>({})
   const [maximizedPanel, setMaximizedPanel] = useState<string | null>(null)
@@ -232,6 +235,52 @@ export default function ExperiencePipelineSection() {
   useEffect(() => {
     activeIndexRef.current = activeIndex
   }, [activeIndex])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+
+    const mediaQuery = window.matchMedia(MOBILE_BOOT_MEDIA_QUERY)
+    const updateViewport = (matches: boolean) => setIsMobileViewport(matches)
+    updateViewport(mediaQuery.matches)
+
+    const handleChange = (event: MediaQueryListEvent) => updateViewport(event.matches)
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange)
+      return () => mediaQuery.removeEventListener('change', handleChange)
+    }
+
+    mediaQuery.addListener(handleChange)
+    return () => mediaQuery.removeListener(handleChange)
+  }, [])
+
+  useEffect(() => {
+    if (!isMobileViewport || maximizedPanel) return
+
+    const section = sectionRef.current
+    if (!section) return
+
+    const resetExperience = () => {
+      if (activeIndexRef.current === 0) return
+      activeIndexRef.current = 0
+      boundaryHoldUntilRef.current = 0
+      wheelDeltaRef.current = 0
+      touchStartYRef.current = null
+      setDirection('forward')
+      setActiveIndex(0)
+    }
+
+    const syncWhenOffscreen = () => {
+      const rect = section.getBoundingClientRect()
+      const isOutsideViewport = rect.bottom <= 0 || rect.top >= window.innerHeight
+      if (isOutsideViewport) resetExperience()
+    }
+
+    syncWhenOffscreen()
+    window.addEventListener('scroll', syncWhenOffscreen, { passive: true })
+
+    return () => window.removeEventListener('scroll', syncWhenOffscreen)
+  }, [isMobileViewport, maximizedPanel])
 
   useEffect(() => {
     const canPinViewport = () => {
@@ -414,6 +463,7 @@ export default function ExperiencePipelineSection() {
   const isProcessorMin = getPState('processor') === 'minimized'
   const isJsonMin = getPState('json') === 'minimized'
   const anyModified = Object.values(panelStates).some(s => s && s !== 'normal') || maximizedPanel !== null
+  const processorAnimationKey = isMobileViewport && isSectionInView && activeIndex === 0 ? 'entered' : 'idle'
 
   return (
     <section id="experience" ref={sectionRef} className="relative min-h-screen py-16 sm:py-20">
@@ -466,11 +516,11 @@ export default function ExperiencePipelineSection() {
               {showQueue && (
                 <motion.div
                   className="exp-col exp-col-queue"
-                  drag
+                  drag={!isMobileViewport}
                   dragConstraints={gridRef}
                   dragElastic={0.08}
                   dragMomentum={false}
-                  whileDrag={{ zIndex: 50, boxShadow: '0 20px 60px rgba(0,0,0,0.45)' }}
+                  whileDrag={isMobileViewport ? undefined : { zIndex: 50, boxShadow: '0 20px 60px rgba(0,0,0,0.45)' }}
                   initial={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
                 >
@@ -511,11 +561,11 @@ export default function ExperiencePipelineSection() {
               {showProcessor && (
                 <motion.div
                   className="exp-col exp-col-processor"
-                  drag
+                  drag={!isMobileViewport}
                   dragConstraints={gridRef}
                   dragElastic={0.08}
                   dragMomentum={false}
-                  whileDrag={{ zIndex: 50, boxShadow: '0 20px 60px rgba(0,0,0,0.45)' }}
+                  whileDrag={isMobileViewport ? undefined : { zIndex: 50, boxShadow: '0 20px 60px rgba(0,0,0,0.45)' }}
                   initial={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
                 >
@@ -524,7 +574,7 @@ export default function ExperiencePipelineSection() {
                     <div className="p-4 sm:p-5">
                       <AnimatePresence mode="wait">
                         <motion.div
-                          key={activeExperience.id}
+                          key={`${activeExperience.id}-${processorAnimationKey}`}
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -8 }}
@@ -575,11 +625,11 @@ export default function ExperiencePipelineSection() {
               {showJson && (
                 <motion.div
                   className="exp-col exp-col-json"
-                  drag
+                  drag={!isMobileViewport}
                   dragConstraints={gridRef}
                   dragElastic={0.08}
                   dragMomentum={false}
-                  whileDrag={{ zIndex: 50, boxShadow: '0 20px 60px rgba(0,0,0,0.45)' }}
+                  whileDrag={isMobileViewport ? undefined : { zIndex: 50, boxShadow: '0 20px 60px rgba(0,0,0,0.45)' }}
                   initial={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
                 >

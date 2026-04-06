@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { projects, libraries } from '../data/projects'
 import { Layers3, Cpu, Boxes, GripHorizontal, RotateCcw } from 'lucide-react'
+import { MOBILE_BOOT_MEDIA_QUERY, shouldAutoBootOnMobile } from '../store/bootStore'
 
 type WindowState = 'normal' | 'minimized' | 'closed'
 
@@ -53,6 +54,7 @@ export default function PlatformsSection() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [states, setStates] = useState<Record<string, WindowState>>({})
   const [maximizedId, setMaximizedId] = useState<string | null>(null)
+  const [isMobileViewport, setIsMobileViewport] = useState(() => shouldAutoBootOnMobile())
 
   const get = (id: string): WindowState => states[id] ?? 'normal'
 
@@ -76,6 +78,24 @@ export default function PlatformsSection() {
       window.removeEventListener('keydown', onEsc)
     }
   }, [maximizedId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+
+    const mediaQuery = window.matchMedia(MOBILE_BOOT_MEDIA_QUERY)
+    const updateViewport = (matches: boolean) => setIsMobileViewport(matches)
+    updateViewport(mediaQuery.matches)
+
+    const handleChange = (event: MediaQueryListEvent) => updateViewport(event.matches)
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange)
+      return () => mediaQuery.removeEventListener('change', handleChange)
+    }
+
+    mediaQuery.addListener(handleChange)
+    return () => mediaQuery.removeListener(handleChange)
+  }, [])
 
   const anyModified = Object.values(states).some(s => s && s !== 'normal') || maximizedId !== null
   const allProjectsClosed = projects.every(p => get(p.id) === 'closed')
@@ -137,11 +157,11 @@ export default function PlatformsSection() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
                       transition={{ delay: index * 0.06, duration: 0.4 }}
-                      drag
+                      drag={!isMobileViewport}
                       dragConstraints={containerRef}
                       dragElastic={0.06}
                       dragMomentum={false}
-                      whileDrag={{ zIndex: 50, scale: 1.02, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
+                      whileDrag={isMobileViewport ? undefined : { zIndex: 50, scale: 1.02, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
                     >
                       <div className="platform-window-titlebar cursor-default" onDoubleClick={() => maxToggle(project.id)}>
                         <div className="flex items-center gap-2.5">
@@ -216,11 +236,11 @@ export default function PlatformsSection() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
                       transition={{ delay: index * 0.06, duration: 0.4 }}
-                      drag
+                      drag={!isMobileViewport}
                       dragConstraints={containerRef}
                       dragElastic={0.06}
                       dragMomentum={false}
-                      whileDrag={{ zIndex: 50, scale: 1.02, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
+                      whileDrag={isMobileViewport ? undefined : { zIndex: 50, scale: 1.02, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
                     >
                       <div className="platform-window-titlebar cursor-default" onDoubleClick={() => maxToggle(lib.id)}>
                         <div className="flex items-center gap-2.5">
